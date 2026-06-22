@@ -1,6 +1,7 @@
 .venv/
 __pycache__/
 .app_state.json
-yc_india_leads_edited.csv
+*.csv
 *.pyc
 .DS_Store
+.wrangler

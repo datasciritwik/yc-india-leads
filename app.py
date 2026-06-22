@@ -372,12 +372,16 @@ display_cols = [c for c in all_cols if c not in hidden]
 
 st.caption("Edit cells, add rows (use the + at the bottom), or delete rows (select + delete key). Click **Save edits** to persist.")
 
+f_edit = f[display_cols].copy()
+f_edit["_original_index"] = f.index
+
 edited = st.data_editor(
-    f[display_cols],
+    f_edit,
     use_container_width=True,
     height=600,
     num_rows="dynamic",
     column_config={
+        "_original_index": None,  # Hide mapping index
         "website": st.column_config.LinkColumn("Website"),
         "yc_url": st.column_config.LinkColumn("YC Profile"),
         "eng_leader_linkedin": st.column_config.LinkColumn("Eng leader LI"),
@@ -400,17 +404,44 @@ with c1:
     if st.button("💾 Save edits", type="primary"):
         # Merge edits back into full df: edited rows update df, new rows appended.
         base = df.copy()
-        # Align using row position from filtered slice
-        existing_idx = f.index[: len(edited)]
+        
+        remaining_indices = set()
+        
         for i, row in edited.iterrows():
-            if i < len(existing_idx):
-                orig_i = existing_idx[i]
+            orig_idx = row.get("_original_index")
+            is_existing = False
+            
+            if pd.notna(orig_idx) and orig_idx != "":
+                try:
+                    orig_idx_val = int(float(orig_idx))
+                    if orig_idx_val in base.index:
+                        orig_idx = orig_idx_val
+                        is_existing = True
+                except (ValueError, TypeError):
+                    pass
+            
+            if is_existing:
+                remaining_indices.add(orig_idx)
                 for c in display_cols:
-                    base.at[orig_i, c] = row[c]
+                    if c in base.columns and c in row:
+                        base.at[orig_idx, c] = row[c]
             else:
                 # New row
                 new_row = {c: row.get(c, "") for c in base.columns if c in row.index}
+                new_row.pop("_original_index", None)
                 base = pd.concat([base, pd.DataFrame([new_row])], ignore_index=True)
+        
+        # Delete rows that were in f (filtered slice) but are no longer in remaining_indices
+        deleted_indices = set(f.index) - remaining_indices
+        if deleted_indices:
+            base = base.drop(index=deleted_indices)
+        
+        # Recompute total_score and tier
+        for c in ("hiring_signal", "icp_fit", "reachability"):
+            base[c] = pd.to_numeric(base[c], errors="coerce").fillna(0).astype(int)
+        base["total_score"] = base["hiring_signal"] + base["icp_fit"] + base["reachability"]
+        base["tier"] = base["total_score"].apply(_tier)
+        
         base.to_csv(EDITED_CSV, index=False)
         load.clear()
         st.success(f"Saved to {EDITED_CSV.name}")
@@ -418,7 +449,7 @@ with c1:
 with c2:
     st.download_button(
         "⬇ Download filtered CSV",
-        edited.to_csv(index=False).encode("utf-8"),
+        edited.drop(columns=["_original_index"], errors="ignore").to_csv(index=False).encode("utf-8"),
         file_name="yc_india_filtered.csv",
         mime="text/csv",
     )
