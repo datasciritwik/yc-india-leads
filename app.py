@@ -133,15 +133,10 @@ else:
 
 df = load(str(active_path), os.path.getmtime(active_path))
 
-# Ensure tracking columns exist; persist once so they survive across reloads.
-_added = False
+# Ensure tracking columns exist in memory.
 for col, default in TRACKING_COLS:
     if col not in df.columns:
         df[col] = default
-        _added = True
-if _added:
-    df.to_csv(EDITED_CSV, index=False)
-    load.clear()
 
 # Force correct dtypes for tracking columns (empty CSV cells load as NaN/float).
 _str_cols = ["eng_leader_name", "eng_leader_linkedin", "hiring_signal_note",
@@ -296,6 +291,14 @@ if st.sidebar.button("Reset filters"):
     if STATE_FILE.exists():
         STATE_FILE.unlink()
     st.rerun()
+
+st.sidebar.divider()
+st.sidebar.subheader("Danger Zone")
+if EDITED_CSV.exists():
+    if st.sidebar.button("🗑️ Delete all edits (Reset CSV)"):
+        EDITED_CSV.unlink()
+        load.clear()
+        st.rerun()
 
 
 # ---------- apply filters ----------
