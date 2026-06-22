@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+.app_state.json
+yc_india_leads_edited.csv
+*.pyc
+.DS_Store
