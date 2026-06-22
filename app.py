@@ -95,8 +95,42 @@ def load(path: str, mtime: float) -> pd.DataFrame:
     return df
 
 
-# Prefer the edited CSV if it exists.
-active_path = EDITED_CSV if EDITED_CSV.exists() else SOURCE_CSV
+# Sidebar uploader — accept a CSV upload, save it as the source file.
+st.sidebar.header("Data")
+uploaded = st.sidebar.file_uploader("Upload leads CSV", type=["csv"], key="uploader")
+if uploaded is not None:
+    SOURCE_CSV.write_bytes(uploaded.getvalue())
+    if EDITED_CSV.exists():
+        # Merge: keep tracking fields from edited CSV (by name), refresh other fields from upload.
+        try:
+            new_df = pd.read_csv(SOURCE_CSV)
+            old_df = pd.read_csv(EDITED_CSV)
+            track_cols = [c for c, _ in TRACKING_COLS if c in old_df.columns]
+            if "name" in new_df.columns and "name" in old_df.columns and track_cols:
+                merged = new_df.merge(old_df[["name", *track_cols]], on="name", how="left", suffixes=("", "_old"))
+                for c in track_cols:
+                    if f"{c}_old" in merged.columns:
+                        merged[c] = merged[f"{c}_old"].combine_first(merged.get(c))
+                        merged.drop(columns=[f"{c}_old"], inplace=True)
+                merged.to_csv(EDITED_CSV, index=False)
+            else:
+                EDITED_CSV.unlink()
+        except Exception:
+            EDITED_CSV.unlink()
+    load.clear()
+    st.sidebar.success(f"Loaded {uploaded.name}")
+    st.rerun()
+
+# Prefer the edited CSV if it exists; otherwise source; otherwise show empty state.
+if EDITED_CSV.exists():
+    active_path = EDITED_CSV
+elif SOURCE_CSV.exists():
+    active_path = SOURCE_CSV
+else:
+    st.title("YC India Leads")
+    st.info("Upload a leads CSV from the sidebar to begin.")
+    st.stop()
+
 df = load(str(active_path), os.path.getmtime(active_path))
 
 # Ensure tracking columns exist; persist once so they survive across reloads.
